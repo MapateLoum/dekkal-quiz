@@ -13,5 +13,6 @@ model Score {
   theme     String
   points    Int
   total     Int
+  password  String
   createdAt DateTime @default(now())
 }

@@ -14,6 +14,7 @@ function QuizGame() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const pseudo = searchParams.get("pseudo") || "Joueur";
+  const password = searchParams.get("password") || "";
   const themeId = searchParams.get("theme") || "";
   const theme = getTheme(themeId);
 
@@ -28,10 +29,10 @@ function QuizGame() {
   const [wrongAnswers, setWrongAnswers] = useState<number[]>([]);
   const [scoresSaved, setScoresSaved] = useState(false);
 
-  // Modale de confirmation de score existant
   const [showConflictModal, setShowConflictModal] = useState(false);
   const [existingScore, setExistingScore] = useState<{ points: number; total: number } | null>(null);
   const [pendingScore, setPendingScore] = useState<number | null>(null);
+  const [saveError, setSaveError] = useState("");
 
   const timerRef = useRef<NodeJS.Timeout | null>(null);
   const answeredRef = useRef(false);
@@ -52,23 +53,29 @@ function QuizGame() {
   const saveScore = useCallback(async (finalScore: number, overwrite = false) => {
     if (scoresSaved && !overwrite) return;
     setScoresSaved(true);
+    setSaveError("");
     try {
       const res = await fetch("/api/scores", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ pseudo, theme: themeId, points: finalScore, total: questions.length, overwrite }),
+        body: JSON.stringify({ pseudo, theme: themeId, points: finalScore, total: questions.length, password, overwrite }),
       });
       const data = await res.json();
 
+      if (res.status === 401) {
+        setSaveError("Mot de passe incorrect pour ce pseudo. Ton score n'a pas été enregistré.");
+        setScoresSaved(false);
+        return;
+      }
+
       if (res.status === 409 && data.conflict) {
-        // Score existant détecté → afficher la modale
         setExistingScore(data.existing);
         setPendingScore(finalScore);
         setShowConflictModal(true);
-        setScoresSaved(false); // permettre de retry
+        setScoresSaved(false);
       }
     } catch (e) { console.error("Erreur sauvegarde score:", e); }
-  }, [pseudo, themeId, questions.length, scoresSaved]);
+  }, [pseudo, password, themeId, questions.length, scoresSaved]);
 
   const handleOverwrite = async () => {
     setShowConflictModal(false);
@@ -144,7 +151,7 @@ function QuizGame() {
           Tu as déjà joué <strong style={{ color: "var(--text)" }}>{theme?.name}</strong> avec ce pseudo.
         </p>
         {existingScore && (
-          <div className="rounded-xl py-2 px-4 mb-4 inline-block"
+          <div className="rounded-xl py-2 px-4 mb-3 inline-block"
             style={{ background: "rgba(124,58,237,0.15)", border: "1px solid var(--border)" }}>
             <span style={{ color: "var(--violet-light)", fontFamily: "var(--font-display)", fontSize: "clamp(14px, 4vw, 18px)", fontWeight: 700 }}>
               Ancien score : {existingScore.points}/{existingScore.total}
@@ -245,6 +252,14 @@ function QuizGame() {
             </h2>
             <p className="mb-5 sm:mb-6" style={{ color: "var(--muted)", fontSize: "clamp(12px, 3.5vw, 14px)" }}>{msg}</p>
 
+            {/* Erreur mot de passe */}
+            {saveError && (
+              <div className="mb-4 px-4 py-3 rounded-xl text-sm"
+                style={{ background: "rgba(239,68,68,0.12)", border: "1px solid rgba(239,68,68,0.3)", color: "#FCA5A5", fontSize: "clamp(11px, 3vw, 13px)" }}>
+                ⚠️ {saveError}
+              </div>
+            )}
+
             <div className="relative mx-auto mb-5 sm:mb-6"
               style={{ width: "clamp(110px, 35vw, 144px)", height: "clamp(110px, 35vw, 144px)" }}>
               <svg className="w-full h-full -rotate-90" viewBox="0 0 120 120">
@@ -281,7 +296,7 @@ function QuizGame() {
 
             <div className="flex flex-col gap-2 sm:gap-3">
               <button
-                onClick={() => { const p = new URLSearchParams({ pseudo, theme: themeId }); window.location.href = `/quiz?${p.toString()}`; }}
+                onClick={() => { const p = new URLSearchParams({ pseudo, theme: themeId, password }); window.location.href = `/quiz?${p.toString()}`; }}
                 className="btn-primary w-full"
                 style={{ fontFamily: "var(--font-display)", fontSize: "clamp(13px, 4vw, 16px)", padding: "clamp(11px, 3vw, 14px)" }}>
                 🔄 Rejouer

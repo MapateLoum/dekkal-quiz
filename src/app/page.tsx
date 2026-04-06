@@ -7,15 +7,36 @@ import { themes } from "@/lib/themes";
 export default function HomePage() {
   const router = useRouter();
   const [pseudo, setPseudo] = useState("");
+  const [password, setPassword] = useState("");
   const [selectedTheme, setSelectedTheme] = useState<string | null>(null);
   const [error, setError] = useState("");
 
   const handleStart = () => {
     if (!pseudo.trim()) { setError("Entre ton pseudo pour commencer !"); return; }
+    if (!password.trim()) { setError("Entre un mot de passe pour protéger ton score !"); return; }
+    if (password.trim().length < 4) { setError("Mot de passe trop court (4 caractères minimum) !"); return; }
     if (!selectedTheme) { setError("Choisis un thème !"); return; }
     setError("");
-    const params = new URLSearchParams({ pseudo: pseudo.trim(), theme: selectedTheme });
+    const params = new URLSearchParams({ pseudo: pseudo.trim(), theme: selectedTheme, password: password.trim() });
     router.push(`/quiz?${params.toString()}`);
+  };
+
+  const inputStyle = {
+    background: "rgba(255,255,255,0.04)",
+    border: "1px solid var(--border)",
+    color: "var(--text)",
+    fontFamily: "var(--font-body)",
+    fontSize: "clamp(14px, 4vw, 16px)",
+  };
+
+  const handleFocus = (e: React.FocusEvent<HTMLInputElement>) => {
+    e.target.style.borderColor = "var(--violet-light)";
+    e.target.style.boxShadow = "0 0 0 3px rgba(168,85,247,0.15)";
+  };
+
+  const handleBlur = (e: React.FocusEvent<HTMLInputElement>) => {
+    e.target.style.borderColor = "var(--border)";
+    e.target.style.boxShadow = "none";
   };
 
   return (
@@ -75,10 +96,9 @@ export default function HomePage() {
         </div>
 
         {/* Card */}
-        <div className="glass-card glow-violet"
-          style={{ padding: "clamp(20px, 5vw, 32px)" }}>
+        <div className="glass-card glow-violet" style={{ padding: "clamp(20px, 5vw, 32px)" }}>
 
-          {/* Pseudo input */}
+          {/* Pseudo + password */}
           <div className="mb-5 sm:mb-7">
             <label className="block mb-2 text-xs font-semibold tracking-widest uppercase"
               style={{ color: "var(--muted)" }}>
@@ -90,24 +110,32 @@ export default function HomePage() {
               onChange={(e) => { setPseudo(e.target.value); setError(""); }}
               placeholder="Ex: Papis_Loum"
               maxLength={20}
-              className="w-full rounded-xl px-4 py-3 text-base outline-none transition-all"
-              style={{
-                background: "rgba(255,255,255,0.04)",
-                border: "1px solid var(--border)",
-                color: "var(--text)",
-                fontFamily: "var(--font-body)",
-                fontSize: "clamp(14px, 4vw, 16px)",
-              }}
-              onFocus={(e) => {
-                e.target.style.borderColor = "var(--violet-light)";
-                e.target.style.boxShadow = "0 0 0 3px rgba(168,85,247,0.15)";
-              }}
-              onBlur={(e) => {
-                e.target.style.borderColor = "var(--border)";
-                e.target.style.boxShadow = "none";
-              }}
+              className="w-full rounded-xl px-4 py-3 text-base outline-none transition-all mb-3"
+              style={inputStyle}
+              onFocus={handleFocus}
+              onBlur={handleBlur}
               onKeyDown={(e) => e.key === "Enter" && handleStart()}
             />
+
+            <label className="block mb-2 text-xs font-semibold tracking-widest uppercase"
+              style={{ color: "var(--muted)" }}>
+              Mot de passe <span style={{ color: "var(--violet-light)", textTransform: "none", letterSpacing: 0, fontWeight: 400 }}>(protège ton score)</span>
+            </label>
+            <input
+              type="password"
+              value={password}
+              onChange={(e) => { setPassword(e.target.value); setError(""); }}
+              placeholder="Min. 4 caractères"
+              maxLength={30}
+              className="w-full rounded-xl px-4 py-3 text-base outline-none transition-all"
+              style={inputStyle}
+              onFocus={handleFocus}
+              onBlur={handleBlur}
+              onKeyDown={(e) => e.key === "Enter" && handleStart()}
+            />
+            <p className="mt-2" style={{ color: "var(--muted)", fontSize: "clamp(10px, 3vw, 12px)" }}>
+              🔒 Ton pseudo est unique — le mot de passe empêche quelqu'un d'autre de modifier ton score.
+            </p>
           </div>
 
           {/* Theme selection */}
@@ -145,10 +173,7 @@ export default function HomePage() {
                       }}>
                         {theme.name}
                       </div>
-                      <div className="mt-0.5 hidden sm:block" style={{
-                        color: "var(--muted)",
-                        fontSize: "11px",
-                      }}>
+                      <div className="mt-0.5 hidden sm:block" style={{ color: "var(--muted)", fontSize: "11px" }}>
                         {theme.description}
                       </div>
                     </div>
@@ -179,8 +204,7 @@ export default function HomePage() {
               fontFamily: "var(--font-display)",
               fontSize: "clamp(14px, 4vw, 17px)",
               padding: "clamp(12px, 3.5vw, 15px) 24px",
-            }}
-          >
+            }}>
             Lancer la partie →
           </button>
 

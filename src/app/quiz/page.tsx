@@ -28,6 +28,11 @@ function QuizGame() {
   const [wrongAnswers, setWrongAnswers] = useState<number[]>([]);
   const [scoresSaved, setScoresSaved] = useState(false);
 
+  // Modale de confirmation de score existant
+  const [showConflictModal, setShowConflictModal] = useState(false);
+  const [existingScore, setExistingScore] = useState<{ points: number; total: number } | null>(null);
+  const [pendingScore, setPendingScore] = useState<number | null>(null);
+
   const timerRef = useRef<NodeJS.Timeout | null>(null);
   const answeredRef = useRef(false);
   const currentQuestion = questions[currentIndex];
@@ -44,17 +49,36 @@ function QuizGame() {
       .catch((err) => { console.error(err); setLoadError("Erreur lors de la génération des questions. Réessaie !"); });
   }, [themeId, theme, router]);
 
-  const saveScore = useCallback(async (finalScore: number) => {
-    if (scoresSaved) return;
+  const saveScore = useCallback(async (finalScore: number, overwrite = false) => {
+    if (scoresSaved && !overwrite) return;
     setScoresSaved(true);
     try {
-      await fetch("/api/scores", {
+      const res = await fetch("/api/scores", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ pseudo, theme: themeId, points: finalScore, total: questions.length }),
+        body: JSON.stringify({ pseudo, theme: themeId, points: finalScore, total: questions.length, overwrite }),
       });
+      const data = await res.json();
+
+      if (res.status === 409 && data.conflict) {
+        // Score existant détecté → afficher la modale
+        setExistingScore(data.existing);
+        setPendingScore(finalScore);
+        setShowConflictModal(true);
+        setScoresSaved(false); // permettre de retry
+      }
     } catch (e) { console.error("Erreur sauvegarde score:", e); }
   }, [pseudo, themeId, questions.length, scoresSaved]);
+
+  const handleOverwrite = async () => {
+    setShowConflictModal(false);
+    if (pendingScore !== null) await saveScore(pendingScore, true);
+  };
+
+  const handleKeepOld = () => {
+    setShowConflictModal(false);
+    setScoresSaved(true);
+  };
 
   const goNext = useCallback((finalScore: number) => {
     answeredRef.current = false;
@@ -105,6 +129,53 @@ function QuizGame() {
   const timerColor = timeLeft > 15 ? "var(--violet-light)" : timeLeft > 8 ? "var(--gold)" : "#EF4444";
   const optionLabels = ["A", "B", "C", "D"];
 
+  // ─── MODALE CONFLIT ───
+  const ConflictModal = () => (
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4"
+      style={{ background: "rgba(0,0,0,0.7)", backdropFilter: "blur(4px)" }}>
+      <div className="glass-card w-full max-w-sm text-center animate-pop"
+        style={{ padding: "clamp(24px, 6vw, 36px)", border: "1px solid var(--border)" }}>
+        <div style={{ fontSize: "clamp(36px, 10vw, 48px)" }} className="mb-3">⚠️</div>
+        <h3 className="font-bold mb-2"
+          style={{ fontFamily: "var(--font-display)", color: "var(--text)", fontSize: "clamp(16px, 5vw, 20px)" }}>
+          Score existant détecté
+        </h3>
+        <p style={{ color: "var(--muted)", fontSize: "clamp(12px, 3.5vw, 14px)" }} className="mb-2">
+          Tu as déjà joué <strong style={{ color: "var(--text)" }}>{theme?.name}</strong> avec ce pseudo.
+        </p>
+        {existingScore && (
+          <div className="rounded-xl py-2 px-4 mb-4 inline-block"
+            style={{ background: "rgba(124,58,237,0.15)", border: "1px solid var(--border)" }}>
+            <span style={{ color: "var(--violet-light)", fontFamily: "var(--font-display)", fontSize: "clamp(14px, 4vw, 18px)", fontWeight: 700 }}>
+              Ancien score : {existingScore.points}/{existingScore.total}
+            </span>
+          </div>
+        )}
+        {pendingScore !== null && (
+          <p style={{ color: "var(--muted)", fontSize: "clamp(12px, 3.5vw, 13px)" }} className="mb-5">
+            Nouveau score : <strong style={{ color: pendingScore > (existingScore?.points ?? 0) ? "#10B981" : "#EF4444" }}>
+              {pendingScore}/{questions.length}
+            </strong>
+          </p>
+        )}
+        <div className="flex flex-col gap-2">
+          <button onClick={handleOverwrite} className="btn-primary w-full"
+            style={{ fontSize: "clamp(13px, 4vw, 15px)", padding: "clamp(10px, 3vw, 13px)" }}>
+            🔄 Écraser avec le nouveau score
+          </button>
+          <button onClick={handleKeepOld}
+            className="w-full rounded-xl font-semibold transition-all"
+            style={{
+              background: "rgba(255,255,255,0.05)", border: "1px solid var(--border)",
+              color: "var(--muted)", fontSize: "clamp(13px, 4vw, 15px)", padding: "clamp(10px, 3vw, 13px)",
+            }}>
+            Garder l'ancien score
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+
   // ─── LOADING ───
   if (gameState === "loading") {
     return (
@@ -125,9 +196,7 @@ function QuizGame() {
           ) : (
             <>
               <h2 className="font-bold mb-2" style={{
-                fontFamily: "var(--font-display)",
-                color: "var(--text)",
-                fontSize: "clamp(18px, 5vw, 24px)",
+                fontFamily: "var(--font-display)", color: "var(--text)", fontSize: "clamp(18px, 5vw, 24px)",
               }}>
                 Génération des questions...
               </h2>
@@ -159,6 +228,7 @@ function QuizGame() {
 
     return (
       <div className="min-h-screen flex items-center justify-center p-4 py-8" style={{ background: "var(--bg)" }}>
+        {showConflictModal && <ConflictModal />}
         <div className="fixed inset-0 pointer-events-none overflow-hidden">
           <div className="absolute rounded-full" style={{
             width: "clamp(200px, 60vw, 500px)", height: "clamp(200px, 60vw, 500px)",
@@ -175,7 +245,6 @@ function QuizGame() {
             </h2>
             <p className="mb-5 sm:mb-6" style={{ color: "var(--muted)", fontSize: "clamp(12px, 3.5vw, 14px)" }}>{msg}</p>
 
-            {/* Score circle */}
             <div className="relative mx-auto mb-5 sm:mb-6"
               style={{ width: "clamp(110px, 35vw, 144px)", height: "clamp(110px, 35vw, 144px)" }}>
               <svg className="w-full h-full -rotate-90" viewBox="0 0 120 120">
@@ -196,7 +265,6 @@ function QuizGame() {
               </div>
             </div>
 
-            {/* Theme badge */}
             <div className="inline-flex items-center gap-2 px-3 sm:px-4 py-2 rounded-full mb-5 sm:mb-6"
               style={{ background: "rgba(124,58,237,0.15)", border: "1px solid var(--border)" }}>
               <span style={{ fontSize: "clamp(14px, 4vw, 16px)" }}>{theme?.emoji}</span>
@@ -211,7 +279,6 @@ function QuizGame() {
               )}
             </div>
 
-            {/* Actions */}
             <div className="flex flex-col gap-2 sm:gap-3">
               <button
                 onClick={() => { const p = new URLSearchParams({ pseudo, theme: themeId }); window.location.href = `/quiz?${p.toString()}`; }}
@@ -256,15 +323,12 @@ function QuizGame() {
       </div>
 
       <div className="relative z-10 w-full max-w-lg">
-
-        {/* Header */}
         <div className="flex items-center justify-between mb-4 sm:mb-6 animate-slide-down gap-2">
           <button onClick={() => router.push("/")}
             className="flex items-center gap-1 transition-opacity hover:opacity-75 flex-shrink-0"
             style={{ color: "var(--muted)", background: "none", border: "none", cursor: "pointer", fontSize: "clamp(11px, 3vw, 14px)" }}>
             ← Quitter
           </button>
-
           <div className="flex items-center gap-1.5 sm:gap-2 px-3 sm:px-4 py-1.5 sm:py-2 rounded-full min-w-0"
             style={{ background: "var(--card)", border: "1px solid var(--border)" }}>
             <span style={{ fontSize: "clamp(13px, 4vw, 16px)" }}>{theme?.emoji}</span>
@@ -273,7 +337,6 @@ function QuizGame() {
               {theme?.name}
             </span>
           </div>
-
           <div className="flex items-center gap-1 sm:gap-1.5 px-3 sm:px-4 py-1.5 sm:py-2 rounded-full flex-shrink-0"
             style={{ background: "rgba(245,158,11,0.12)", border: "1px solid rgba(245,158,11,0.25)" }}>
             <span style={{ fontSize: "clamp(11px, 3vw, 14px)" }}>⭐</span>
@@ -283,7 +346,6 @@ function QuizGame() {
           </div>
         </div>
 
-        {/* Progress */}
         <div className="mb-3 sm:mb-5 animate-fade-in">
           <div className="flex justify-between mb-1.5"
             style={{ color: "var(--muted)", fontSize: "clamp(10px, 2.8vw, 12px)" }}>
@@ -299,7 +361,6 @@ function QuizGame() {
           </div>
         </div>
 
-        {/* Timer */}
         <div className="mb-3 sm:mb-5 animate-fade-in">
           <div className="flex justify-between mb-1"
             style={{ color: "var(--muted)", fontSize: "clamp(10px, 2.8vw, 12px)" }}>
@@ -312,7 +373,6 @@ function QuizGame() {
           </div>
         </div>
 
-        {/* Question card */}
         <div key={currentIndex} className="glass-card glow-violet mb-3 sm:mb-5 animate-slide-up"
           style={{ padding: "clamp(16px, 5vw, 28px)" }}>
           <p className="font-semibold leading-relaxed"
@@ -321,7 +381,6 @@ function QuizGame() {
           </p>
         </div>
 
-        {/* Options */}
         <div className="grid grid-cols-1 gap-2 sm:gap-3">
           {currentQuestion?.options.map((option, i) => {
             const isSelected = selectedOption === option;

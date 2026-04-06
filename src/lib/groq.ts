@@ -10,6 +10,15 @@ export interface Question {
   answer: string;
 }
 
+function shuffleArray<T>(array: T[]): T[] {
+  const arr = [...array];
+  for (let i = arr.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [arr[i], arr[j]] = [arr[j], arr[i]];
+  }
+  return arr;
+}
+
 export async function generateQuestions(theme: string): Promise<Question[]> {
   const prompt = `Tu es un générateur de quiz en français. Génère exactement 10 questions de quiz sur le thème: "${theme}".
 
@@ -41,7 +50,6 @@ Génère 10 questions maintenant pour le thème: ${theme}`;
 
   const content = completion.choices[0]?.message?.content || "";
 
-  // Extract JSON from the response
   const jsonMatch = content.match(/\[[\s\S]*\]/);
   if (!jsonMatch) {
     throw new Error("Impossible de parser les questions générées");
@@ -49,10 +57,16 @@ Génère 10 questions maintenant pour le thème: ${theme}`;
 
   const questions: Question[] = JSON.parse(jsonMatch[0]);
 
-  // Validate
   if (!Array.isArray(questions) || questions.length === 0) {
     throw new Error("Format de questions invalide");
   }
 
-  return questions.slice(0, 10);
+  return questions.slice(0, 10).map((q) => {
+    const shuffledOptions = shuffleArray(q.options);
+    return {
+      ...q,
+      options: shuffledOptions,
+      answer: q.answer,
+    };
+  });
 }
